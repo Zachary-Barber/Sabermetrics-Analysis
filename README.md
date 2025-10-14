@@ -9,4 +9,4 @@ Zach Barber
 - LinkedIn: www.linkedin.com/in/zachary-barber
 
 ## Overview:
-The final project for my Introduction to Data Analytics course gave students free reign to choose a topic of their interest. I decided to focus my analysis on baseball data. This repository contains all of the files used in the completion of this project.
+The final project for my Introduction to Data Analytics course gave students free reign to choose a topic of their interest. I decided to focus my analysis on baseball data. This repository contains all of the files used in the completion of this project. The main file containing the final report for this project is Final-Project.html
