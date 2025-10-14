@@ -1,0 +1,618 @@
+---
+title: "Strategizing with Sabermetrics: A Baseball Regression Analysis"
+author: "Zach Barber"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+      code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+# Loading in packages
+library(ggplot2)
+library(dplyr)
+library(ggthemes)
+library(tidyr)
+library(patchwork) # Used for combined visuals
+library(knitr) # Used for generation of table of Metrics and R-squared values
+
+# Load in data
+team_data <- read.csv("/Users/zacharybarber/Desktop/DA Work/final project/Team Stats for CSV - Sheet1.csv")
+
+# Check which team names I need to change to standardize (This works really well because all of the team names that have changed through the years will show up last because of the order the function reads through the variable names)
+sapply(team_data[, c("Tm")], unique)
+
+# Change names to one standardized name for teams that changed names/moved. For example, every Angels team will be standardized to Los Angeles Angels. Probably not the best solution for a professional setting but it will work for this project. These names will encapsulate the whole franchise that they represent.
+replacements <- list(
+  "California Angels" = "Los Angeles Angels",
+  "Anaheim Angels" = "Los Angeles Angels",
+  "Cleveland Indians" = "Cleveland Guardians",
+  "Montreal Expos" = "Washington Nationals",
+  "Tampa Bay Devil Rays" = "Tampa Bay Rays",
+  "Florida Marlins" = "Miami Marlins"
+)
+
+# Check to make sure team names are all standardized now
+sapply(team_data[, c("Tm")], unique)
+
+team_data <- team_data %>%
+  mutate(across(c(Tm), ~ {
+    # Replace strings based on the replacements list
+    ifelse(. %in% names(replacements), replacements[.], .)
+  }))
+
+team_data <- team_data %>%
+  select(!WSWinner & !WSLoser & !MadePostseason.)
+
+# Mass standardization of variables through time
+standardized_team_data <- team_data %>%
+  group_by(Year) %>%
+  mutate(across(
+    .cols = where(is.numeric) & !c(Tm, W, L, G, GS, GF),
+    ~ (. - mean(., na.rm = TRUE)) / sd(., na.rm = TRUE)
+  )) # Used ChatGPT to get started with this. Fixed up a bit
+
+```
+
+## Introduction
+
+This report aims to answer three main research questions:
+
+-   1\. Which statistics are most correlated with the number of wins a team has?
+
+-   2\. Can I predict the number of wins a given Major League Baseball (MLB) team will have in a season based on specific team statistics?
+
+-   3\. Are “Moneyball” statistics better at predicting wins than more traditional ones?
+
+The conclusions made from the investigation and analysis of baseball statistics in this way can be utilized in a variety of ways. I believe the main parties that can benefit from my analysis are MLB teams (or baseball teams in general). Some ways in which teams can use the data I collect are to choose which players to trade for or draft, decide which statistics they should focus on to give the best chance of success, and to choose a game plan (power-hitting vs. small ball for example). There are plenty of other uses for this analysis, but these are some of the big ones that I determined.
+
+**Background:**
+
+Considering baseball's widespread popularity, it's not surprising that people have been number-crunching and analyzing the game for decades. Contrary to what I believed when I first started on this project, my research likely won't uncover any revolutionary ideas that haven't already been considered. However, I believe that it is still important for me to complete this project in order to formulate my own conclusions. It is one thing to read other peoples' opinions and take their word as gospel, but it's another to actually put their theories to the test in my own analysis. In forming my own opinions on this topic, I can begin to get a foothold that will provide me with the skills necessary to conduct more complex research and analysis in the future.
+
+One of the most prominent figures in the world of baseball analysis is Bill James. In fact he even created the term used to describe the practice: sabermetrics. The term sabermetrics is used to describe the practice of using statistical analysis to evaluate player performance and develop strategy in baseball. This name plays on the name of the Society for American Baseball Research (SABR). James is the author of many baseball statistics books. From 1977 to 1988, he published an annual book titled *The Bill James Baseball Abstract* which contained in-depth statistics compiled from his study of box scores from the previous season. After ceasing the annual publication of his abstracts, he published numerous other books related to baseball analytics.
+
+Another well known connection to sabermetrics is *Moneyball* written by author Michael Lewis. It tells the true story of the 2002 Oakland Athletics team who won 103 games (tied for the most in baseball that season with the Yankees). This accomplishment was especially impressive due to the A's comparative lack of money. Among North America's Big 4 sports leagues, the MLB is the only one that does not implement a salary cap. This means that teams in larger markets like the New York Yankees or Los Angeles Dodgers tend to have an advantage due to the often exorbitant amounts of money they can spend on top players. According to The Baseball Cube, the Athletics were ranked 28 out of 30 for total team payroll in 2002 with about \$40 million. On the other hand, the Yankees were ranked 1 out of 30 with a total team payroll of about \$126 million (The Baseball Cube, 2002). While I originally intended to analyze salary data in this project, I was unable to find a sufficient dataset for every year I analyzed.
+
+Billy Beane, the general manager of the Athletics in 2002, actually read much of James' work and combined his analysis with his own strategies to build a successful team. The term "Moneyball" statistics used in research question 3 refers to the statistics Billy Beane generally focused on when putting together his team: On Base Percentage (OBP) and Slugging Percentage (SLG). These stats were combined later to form a new statistic: On Base plus Slugging Percentage (OPS).
+
+Baseball is a very lucrative industry, and as such, people and teams have invested much time, energy, and money into gaining any competitive edge they can. In researching for this project, I intentionally avoided reading too much into Bill James' analysis in the hopes that I could formulate my own conclusions. I have read *Moneyball* in the past and will likely utilize some of the knowledge I gathered from that in my analysis.
+
+## Data Explanation and Exploration
+
+I gathered all of the data used for this project from the baseball reference website. I manually combined full season data from five different three-year periods (1978-1980, 1991-1993, 2001-2003, 2011-2013, and 2022-2024). One observation in the dataset represents one team from one season (for example, the 2023 Pittsburgh Pirates). I chose these sets of years to represent a good spread of data from a wide range of years so that I could analyze how the game has changed over time. I also made sure to avoid seasons that may have influenced the data unnaturally, like the shortened 2020 COVID-19 season for example. For more information on the variables included in the data sets I utilized, click the link here ([Link to Codebook](https://docs.google.com/document/d/1Vf1_5QK5XxC0vvWWhEAShS-lcFba_mURpgv-RS4A7e4/edit?usp=sharing){.uri}).
+
+Because I synthesized the data myself, there wasn't much cleaning up to do. One of the only things I had to do when I loaded my dataset into R was to standardize some team names that had changed over the years. Though looking back, I don't think it really would have mattered either way as none of my analysis looked at trends of individual teams through time, but rather the league as a whole.
+
+I started out by analyzing the data to view some trends through time. This analysis helped me to see how the league has changed over the years. I performed this exploration before I had focused in on specific research questions, so this also provided some insight into what topics might be especially interesting to research and which topics might be more influential in determining the number of wins a team has. I have included some of the trends I uncovered that I felt were the most interesting.
+
+```{r message=FALSE, warning=FALSE}
+
+# OPS by year
+team_data %>%
+  ggplot(aes(x=Year, y=OPS)) +
+  geom_smooth(method="lm") +
+  geom_point() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size =14, face = "bold"),
+    axis.title.x = element_text(size = 12, face="bold"),
+    axis.title.y = element_text(size = 12, face="bold"),
+    plot.caption = element_text(hjust = 0.5, face = "bold")) +
+  labs(
+    x="Year", 
+    y="Team OPS",
+    title="Team OPS by Year",
+    caption = "\n This graph showcases the trend in On Base plus Slugging Percentage (OPS) across all of the years tested \n between 1978 and 2024. This graph indicates that OPS has remained relatively constant throughout the years."
+  )
+```
+
+```{r message=FALSE, warning=FALSE}
+# Number of pitchers used by year
+team_data %>% 
+  ggplot(aes(x=Year, y=NP)) +
+  geom_smooth(method="lm") +
+  geom_point() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size =14, face = "bold"),
+    axis.title.x = element_text(size = 12, face="bold"),
+    axis.title.y = element_text(size = 12, face="bold"),
+    plot.caption = element_text(hjust = 0.5, face = "bold")) +
+  labs(
+    x="Year", 
+    y="Number of Pitchers Used",
+    title="Number of Pitchers Used by Year",
+    caption = "\n This graph showcases the trend in the number of pitchers used per team across all of the years tested between \n 1978 and 2024. This graph indicates that the number of pitchers used has steadily increased through the years. \n This makes sense considering the increased focus on player safety and arm care that has been seen in \n recent years."
+  )
+```
+
+```{r message=FALSE, warning=FALSE}
+# Complete Games by year
+team_data %>% 
+  ggplot(aes(x=Year, y=CG)) +
+  geom_smooth(method="lm") +
+  geom_point() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size =14, face = "bold"),
+    axis.title.x = element_text(size = 12, face="bold"),
+    axis.title.y = element_text(size = 12, face="bold"),
+    plot.caption = element_text(hjust = 0.5, face = "bold")) +
+  labs(
+    x="Year", 
+    y="Complete Games Pitched",
+    title="Number of Complete Games Pitched by Year",
+    caption = "\n This graph showcases the trend in the number of complete games pitched across all of the years tested between \n 1978 and 2024. This graph indicates that the number of complete games has steadily decreased through the years. \n Similar to the previous graph, this makes sense considering the increased focus on player safety and arm care \n that has been seen in recent years"
+  )
+```
+
+```{r message=FALSE, warning=FALSE}
+# Fielding Percentage by year
+team_data %>% 
+  ggplot(aes(x=Year, y=FldP)) +
+  geom_smooth(method="lm") +
+  geom_point() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size =14, face = "bold"),
+    axis.title.x = element_text(size = 12, face="bold"),
+    axis.title.y = element_text(size = 12, face="bold"),
+    plot.caption = element_text(hjust = 0.5, face = "bold")) +
+  labs(
+    x="Year", 
+    y="Fielding Percentage",
+    title="Team Fielding Percentage by Year",
+    caption = "\n This graph showcases the trend in team fielding percentage across all of the years tested between 1978 \n and 2024. This graph indicates that team fielding percentage has steadily increased through the years. This \n is likely an indication that players have gotten better through the years and are less likely to commit errors."
+  )
+
+```
+
+```{r message=FALSE, warning=FALSE}
+# Sacrifice Hits (Bunts) by year
+team_data %>% 
+  ggplot(aes(x=Year, y=SH)) +
+  geom_smooth(method="lm") +
+  geom_point() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size =14, face = "bold"),
+    axis.title.x = element_text(size = 12, face="bold"),
+    axis.title.y = element_text(size = 12, face="bold"),
+    plot.caption = element_text(hjust = 0.5, face = "bold")) +
+  labs(
+    x="Year", 
+    y="Number of Sacrifice Bunts",
+    title="Number of Sacrifice Bunts by Year",
+    caption = "\n 
+This graph showcases the trend in the number of sacrifice bunts performed each year across all the years tested 
+between 1978 and 2024. This graph indicates that the number of sacrifice bunts has decreased over the years. 
+I have two possible explanations for this trend. The first is that teams may put more trust in their players 
+to come up with big hits and, as a result, focus less on 'small ball.' The second possible explanation is that 
+this is a result of a rule change that occurred prior to the 2022 season. This change was the implementation of 
+the universal designated hitter (DH). Prior to the 2022 season, in the National League, pitchers had to
+hit in the lineup. Most sacrifice bunts were performed by pitchers due to their tendency to be poor hitters 
+as well as the desire to avoid injury. From 2022 onward, pitchers were no longer required to hit so this may also \n explain this trend."
+  )
+
+```
+
+```{r message=FALSE, warning=FALSE}
+# Strikeouts by year
+team_data %>% 
+  ggplot(aes(x=Year, y=SOP)) +
+  geom_smooth(method="lm") +
+  geom_point() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size =14, face = "bold"),
+    axis.title.x = element_text(size = 12, face="bold"),
+    axis.title.y = element_text(size = 12, face="bold"),
+    plot.caption = element_text(hjust = 0.5, face = "bold")) +
+  labs(
+    x="Year", 
+    y="Team Strikouts (Pitching)",
+    title="Team Strikeouts (Pitching) by Year",
+    caption = "\n This graph showcases the trend in the number of strikeouts pitched each year across all the years tested \n between 1978 and 2024. This graph indicates that the number of strikeouts has increased steadily over the \n years. This is likely an indication that pitchers have improved through the years. Maybe this is also part of the \n explanation for why pitchers don't throw as many complete games anymore. As pitchers get better, they \n become fatigued more quickly."
+  )
+
+```
+
+### Standardization
+
+In order to properly analyze this data, I need to account for changes over time in my models. I had not thought about this potential flaw until I created visuals while exploring the dataset. One example that I believe perfectly encapsulates this necessity can be seen with the "Team Strikeouts (Pitching)" variable. In the combined "Team Strikeouts (Pitching) by year" and "Team Strikeouts (Pitching) vs. Number of Wins" graph seen below, we can see that strikeouts have increased steadily through the years. Because of this, the graph of Strikeouts vs. Wins does not accurately show how the number of strikeouts and wins are related. The logic behind this thinking is that a mediocre team in 2024 will have many more strikeouts than even the best team in 1980. This prevents us from seeing an accurate representation of how strikeouts and wins are related.
+
+```{r message=FALSE, warning=FALSE}
+# Telling the story about how my data analysis would be flawed without standardizing values through time
+
+# Strikeouts by year
+SOP_Y_plot <- team_data %>% 
+  ggplot(aes(x=Year, y=SOP)) +
+  geom_smooth(method="lm") +
+  geom_point() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size =10, face = "bold"),
+    axis.title.x = element_text(size = 7, face="bold"),
+    axis.title.y = element_text(size = 7, face="bold")) +
+  labs(
+    x="Year", 
+    y="Team Strikouts (Pitching)",
+    title="Team Strikeouts (Pitching) by Year"
+  )
+
+# Strikeouts vs. Wins
+SOP_W_plot <- team_data %>% 
+  ggplot(aes(x=SOP, y=W)) +
+  geom_smooth(method="lm") +
+  geom_point()+
+  theme(
+    plot.title = element_text(hjust = 0.5, size =10, face = "bold"),
+    axis.title.x = element_text(size = 7, face="bold"),
+    axis.title.y = element_text(size = 7, face="bold")) +
+  labs(
+    x="Team Strikeouts (Pitching)", 
+    y="Number of Wins",
+    title="Team Strikeouts (Pitching) vs. Number of Wins"
+  )
+
+combined_SOP_plot <- SOP_Y_plot + SOP_W_plot
+combined_SOP_plot
+```
+
+On the other hand, OPS remains relatively constant throughout time meaning the trend will remain the same regardless of whether we account for changes over time. A mediocre team in 2024 will likely have a lower OPS than the best team in 1980. This can be seen in the combined "Team OPS by Year" and "Team OPS vs. Number of Wins" graph below and gives us the ability to see just how wins and OPS are related.
+
+```{r message=FALSE, warning=FALSE}
+
+# OPS by year
+OPS_Y_plot <- team_data %>%
+  ggplot(aes(x=Year, y=OPS)) +
+  geom_smooth(method="lm") +
+  geom_point() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size =10, face = "bold"),
+    axis.title.x = element_text(size = 7, face="bold"),
+    axis.title.y = element_text(size = 7, face="bold")) +
+  labs(
+    x="Year", 
+    y="Team OPS",
+    title="Team OPS by Year"
+  )
+
+
+# OPS vs. Wins
+OPS_W_plot <- team_data %>% 
+  ggplot(aes(x=OPS, y=W)) +
+  geom_smooth(method="lm") +
+  geom_point() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size =10, face = "bold"),
+    axis.title.x = element_text(size = 7, face="bold"),
+    axis.title.y = element_text(size = 7, face="bold")) +
+  labs(
+    x="Team OPS", 
+    y="Number of Wins",
+    title="Team OPS vs. Number of Wins"
+  )
+
+combined_OPS_plot <- OPS_Y_plot + OPS_W_plot
+combined_OPS_plot
+```
+
+#### Z-Scores
+
+To properly analyze trends by accounting for changes over time, I used z-scores. This is a method that can be used to standardize values through time. Standardization using z-scores compares an observed value to the average value from that year. The interpretation of the graphs becomes a little different. Now, we see how a one standard deviation increase in the x value is related to a change in the y value. This is different from the original graphs in which we analyzed how a one unit increase in the x value was related to a change in the y value. The formula used to standardize using z-scores is z = (x-µ)/σ where x = the observed value, µ = the mean of that statistic from that season, and σ = the standard deviation of that statistic from that season.
+
+We can see that the "Standardized Team Strikeouts (Pitching) vs. Number of Wins" graph has a trend that differs from the non-standardized graph. This allows us to better see how strikeout totals are related to wins. On the other hand, the "Standardized Team OPS vs. Number of Wins" barely changes compared to its non-standardized counterpart. This is because the values have not changed much over time. Regardless of whether standardization is absolutely necessary, I will use standardized values for most of my analyses in order to more easily compare graphs and their trends.
+
+The graphs below showcase the data following standardization.
+
+```{r message=FALSE, warning=FALSE}
+# Showing off data post standardization
+
+standardized_team_data %>% 
+  ggplot(aes(x=SOP, y=W)) +
+  geom_smooth(method="lm") +
+  geom_point()+
+  theme(
+    plot.title = element_text(hjust = 0.5, size =14, face = "bold"),
+    axis.title.x = element_text(size = 12, face="bold"),
+    axis.title.y = element_text(size = 12, face="bold"),
+    plot.caption = element_text(hjust = 0.5, face = "bold")) +
+  labs(
+    x="Team Strikeouts (Pitching)", 
+    y="Number of Wins",
+    title="Standardized Team Strikeouts (Pitching) vs. Number of Wins",
+    caption = "\n This graph indicates that as a team's strikeout total deviates further in the positive direction from the league \n average of that year, the more wins they are predicted to have."
+  )
+
+standardized_team_data %>%
+  ggplot(aes(x=OPS, y=W)) +
+  geom_smooth(method="lm") +
+  geom_point()+
+  theme(
+    plot.title = element_text(hjust = 0.5, size =14, face = "bold"),
+    axis.title.x = element_text(size = 12, face="bold"),
+    axis.title.y = element_text(size = 12, face="bold"),
+    plot.caption = element_text(hjust = 0.5, face = "bold")) +
+  labs(
+    x="OPS", 
+    y="Number of Wins",
+    title="Standardized Team OPS vs. Number of Wins",
+    caption = "\n This graph indicates that as a team's OPS deviates further in the positive direction from the league \n average of that year, the more wins they are predicted to have."
+  )
+
+```
+
+After all of my data was wrangled using standardization, I was able to begin on the statistical analysis portion.
+
+## Statistical Analysis and Interpretation
+
+### Research Question 1:
+
+To begin, I focused on answering research question 1: Which statistics are most correlated with the number of wins a team has? To answer this question, I created a function that runs a regression model between wins and every other statistic in the standardized_team_data data frame and determines the R-squared value. It then adds all of these values to a new data frame. The result of this method can be seen below and shows the 15 statistics that are most correlated with the number of wins a team has. Here are the top 5:
+
+1.  WHIP (Walks plus hits per inning pitched)
+2.  RA.G (Runs against per game)
+3.  RA (Total runs against)
+4.  ERAP (Earned Run Average normalized across the entire league)
+5.  ERA (Earned Run Average)
+
+Something I noticed is that every statistic in the top 5 is related to pitching and defense. This may be an indication that pitching and defense are the most important facets of the game. Although it originated in a completely different sport, the saying "defense wins championships" certainly seems to apply here.
+
+```{r message=FALSE, warning=FALSE}
+# Function used to run regression between every numeric variable and wins. This will allow me to determine which variables are most correlated with wins. Used ChatGPT to get started with this.
+
+calculate_r_squared <- function(data, target_col = "W") {
+
+  # Filter numeric columns, excluding the target column
+  numeric_cols <- names(data)[sapply(data, is.numeric) & names(data) != target_col]
+  
+  # Initialize an empty data frame to store results
+  results <- data.frame(Metric = character(), R_squared = numeric(), stringsAsFactors = FALSE)
+  
+  # Loop through each numeric column and calculate R-squared
+  for (col in numeric_cols) {
+    # Fit a linear regression model
+    model <- lm(data[[target_col]] ~ data[[col]], data = data)
+    
+    # Extract R-squared value
+    r_squared <- summary(model)$r.squared
+    
+    # Append results to the data frame
+    results <- rbind(results, data.frame(Metric = col, R_squared = r_squared))
+  }
+  
+  return(results)
+}
+
+
+r_squared_results <- calculate_r_squared(standardized_team_data, target_col = "W")
+
+# Arrange in descending order
+r_squared_results <- r_squared_results %>%
+  arrange(desc(R_squared))
+
+# Round each R-squared value to 4 decimals
+r_squared_results <- r_squared_results %>%
+  mutate(R_squared = round(r_squared_results$R_squared, 4))
+
+# Filter out metrics that shouldn't be analyzed
+r_squared_results <- r_squared_results %>%
+  filter(!Metric %in% c("L", "WLP", "Year"))
+
+# Format the output table
+kable(head(r_squared_results, 15), format = "html", table.attr = "class='table table-striped'")
+
+```
+
+### Research Question 2:
+
+Next I attempted to answer my second research question: Can I predict the number of wins a given Major League Baseball (MLB) team will have in a season based on specific team statistics?
+
+I used the data I found from answering question 1, along with some test regression models to determine which variables to include. I started by using a simple regression model with WHIP seen below.
+
+```{r message=FALSE, warning=FALSE}
+# Simple model using only WHIP
+WHIP_model <- lm(standardized_team_data$W ~ standardized_team_data$WHIP)
+summary(WHIP_model)
+```
+
+The multiple R-squared value from this model is 0.54 which indicates that 54% of the variation in wins can be attributed to WHIP. Additionally, the p-value is very small indicating that this model is statistically significant at the 0.001 level. The intercept is about 81. This means that before factoring in any other statistics, a team is expected to win 81 games. This makes sense because 81 wins means that a team wins half of their games. The league average for both wins and losses is 81 because all games are factored into the dataset. This intercept will hold true for every regression model run using this dataset. Finally, the estimate of -9.22 indicates that every 1 standard deviation increase in WHIP predicts a decrease of 9.22 wins. This means that a team with a lower WHIP is expected to perform better.
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+# Testing out regressions to get an idea of which stats to include
+
+# Simple model using only OPS
+OPS_model <- lm(standardized_team_data$W ~ standardized_team_data$OPS)
+summary(OPS_model)
+
+# Simple model using only SOP
+SOP_model <- lm(standardized_team_data$W ~ standardized_team_data$SOP)
+summary(SOP_model)
+
+# Simple model using only FldP
+FldP_model <- lm(standardized_team_data$W ~ standardized_team_data$FldP)
+summary(FldP_model)
+
+# Simple model using only ERA
+ERA_model <- lm(standardized_team_data$W ~ standardized_team_data$ERA)
+summary(ERA_model)
+
+# Simple model using only R
+R_model <- lm(standardized_team_data$W ~ standardized_team_data$R)
+summary(R_model)
+
+# Bivariate model using both OPS and SOP
+OPS_SOP_model <- lm(standardized_team_data$W ~ standardized_team_data$OPS + standardized_team_data$SOP)
+summary(OPS_SOP_model) 
+
+```
+
+After creating the WHIP model, I began to test some multiple regression models. Surprisingly, every model I tested that included WHIP (the stat most highly correlated with wins) did not hold up to the best model I created which utilized OPS, fielding percentage, ERA, and runs scored. I believe this is due to the multicollinearity WHIP has with many other statistics. When combined into a multiple regression model, the model is unable to separate the effect WHIP has on wins with the effect other statistics have on wins. This prevents us from seeing an R-squared value higher than the best model which does avoid multicollinearity. The best multiple regression model I created and its output can be seen below.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Final Regression Model
+
+# Multi-variate model (Multiple R-squared:  0.8894,	Adjusted R-squared:  0.8883)
+multi_model_best <- lm(standardized_team_data$W ~ standardized_team_data$OPS + standardized_team_data$FldP + standardized_team_data$ERA + standardized_team_data$R) 
+summary(multi_model_best)
+
+```
+
+The multiple R-squared value from this model is 0.89 which indicates that 89% of the variation in wins can be attributed to OPS, Fielding Percentage, ERA, and Total Runs Scored. Additionally, the p-value is very small indicating that this model is statistically significant at the 0.001 level. As expected, the intercept is about 81. The interpretation for one of the estimates (OPS) is as follows: Holding all other variables (Fielding Percentage, ERA, and Runs Scored) constant, a 1 standard deviation increase in OPS predicts an increase of 2.03 wins. A team with a higher OPS is expected to win more games. This same methodology and interpretation can be performed for the rest of the variables in this model.
+
+### Making Predictions with the Model
+
+After creating my model, I used it to attempt to predict wins for all of the teams in my dataset. The "Actual Wins vs. Predicted Wins" graph below shows how well the model predicts wins. I included a y=x line to indicate how far each point is from perfectly predicting wins. If the model perfectly predicted wins, every point would be on this line.
+
+```{r message=FALSE, warning=FALSE}
+# Predictions
+
+# Add predicted values to datasets
+team_data <- team_data %>%
+  mutate(predicted_wins = predict(multi_model_best, data = team_data))
+
+standardized_team_data <- standardized_team_data %>%
+  ungroup() %>%
+  mutate(predicted_wins = predict(multi_model_best, data = standardized_team_data))
+
+# Add residuals to dataset (How far off prediction was from actual values)
+team_data <- team_data %>%
+  mutate(residuals = residuals(multi_model_best))
+
+standardized_team_data <- standardized_team_data %>%
+  mutate(residuals = residuals(multi_model_best))  
+
+# y = x line to show how far off predicted values are from true values
+ggplot(team_data, aes(x=W, y=predicted_wins)) +
+  geom_abline(slope = 1, intercept = 0, color = "dodgerblue", size = 1.5 ) +
+  geom_point() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size =14, face = "bold"),
+    axis.title.x = element_text(size = 12, face="bold"),
+    axis.title.y = element_text(size = 12, face="bold")) +
+  labs(
+    x="Actual Wins", 
+    y="Predicted Wins",
+    title="Actual Wins vs. Predicted Wins"
+  )
+```
+
+```{r message=FALSE, warning=FALSE}
+# Histogram of residuals 
+ggplot(team_data, aes(x=residuals)) +
+  geom_histogram(binwidth=1, fill="#D50032", color="#002D72") +  # These are the MLB logo colors
+  theme(
+    plot.title = element_text(hjust = 0.5, size =14, face = "bold"),
+    axis.title.x = element_text(size = 12, face="bold"),
+    axis.title.y = element_text(size = 12, face="bold"),
+    plot.caption = element_text(hjust = 0.5, face = "bold")) +
+  labs(
+    x="Residuals", 
+    y="Count",
+    title="Distribution of Residuals",
+    caption= "This histogram shows the distribution of residuals. It indicates that the model fits the dataset well because the \n residuals are normally distributed around 0."
+  )
+```
+
+After running the model on the entire dataset, I wanted to determine whether the model predicted wins for some years better than others. To do this, I ran the model on each three-year period individually and compared their r-squared values. These are the results of this test:
+
+-   2022-2024: Multiple R-squared: 0.9245, Adjusted R-squared: 0.921
+
+-   2011-2013: Multiple R-squared: 0.8912, Adjusted R-squared: 0.886
+
+-   2001-2003: Multiple R-squared: 0.9075, Adjusted R-squared: 0.9031
+
+-   1991-1993: Multiple R-squared: 0.8699, Adjusted R-squared: 0.863
+
+-   1978-1980: Multiple R-squared: 0.8639, Adjusted R-squared: 0.8564
+
+From these R-squared values, I determined that my model is slightly better at predicting win totals for more recent years (The three most recent three-year periods have R-squared values around 0.90-0.92) than it is for the earlier years (the two earliest three-year periods have R-squared values around 0.86-0.87). This may be another indication that the game has changed throughout the years and that the metrics that are best at predicting a team's win total today are not the same as they were thirty to forty years ago. It is also possible that this is just due to random chance as the difference is not very large.
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+# Run the model for each group of years to see which years the model is most accurate for (Some variables become insignificant when zooming in to specific year ranges. Not sure why)
+
+
+  # 2022-2024 (Multiple R-squared:  0.9245,	Adjusted R-squared:  0.921)
+  year_group5 <- standardized_team_data %>%
+    filter(Year == 2022 | Year == 2023 | Year == 2024)
+  multi_model_best_5 <- lm(year_group5$W ~ year_group5$OPS + year_group5$FldP + year_group5$ERA + year_group5$R) 
+  summary(multi_model_best_5)
+
+  # 2011-2013 (Multiple R-squared:  0.8912,	Adjusted R-squared:  0.886)
+  year_group4 <- standardized_team_data %>%
+    filter(Year == 2011 | Year == 2012 | Year == 2013)
+  multi_model_best_4 <- lm(year_group4$W ~ year_group4$OPS + year_group4$FldP + year_group4$ERA + year_group4$R) 
+  summary(multi_model_best_4)
+
+  # 2001-2003 (Multiple R-squared:  0.9075,	Adjusted R-squared:  0.9031)
+  year_group3 <- standardized_team_data %>%
+    filter(Year == 2001 | Year == 2002 | Year == 2003)
+  multi_model_best_3 <- lm(year_group3$W ~ year_group3$OPS + year_group3$FldP + year_group3$ERA + year_group3$R) 
+  summary(multi_model_best_3)
+  
+  # 1991-1993 (Multiple R-squared:  0.8699,	Adjusted R-squared:  0.863)
+  year_group2 <- standardized_team_data %>%
+    filter(Year == 1991 | Year == 1992 | Year == 1993)
+  multi_model_best_2 <- lm(year_group2$W ~ year_group2$OPS + year_group2$FldP + year_group2$ERA + year_group2$R)
+  summary(multi_model_best_2)
+  
+  # 1978-1980 (Multiple R-squared:  0.8639,	Adjusted R-squared:  0.8564)
+  year_group1 <- standardized_team_data %>%
+    filter(Year == 1978 | Year == 1979 | Year == 1980)
+  multi_model_best_1 <- lm(year_group1$W ~ year_group1$OPS + year_group1$FldP + year_group1$ERA + year_group1$R)
+  summary(multi_model_best_1)
+
+```
+
+### Research Question 3:
+
+My final research question was: Are "Moneyball" statistics better at predicting wins than more traditional ones? In *Moneyball*, Michael Lewis mentions that Billy Beane focused on on-base percentage (OBP) and slugging percentage and did not emphasize power (Lewis, 2003). This differed from the traditional metrics of RBIs and batting average used by teams. I decided to run a regression to determine whether the stats Beane used are better predictors than the more traditional metrics.
+
+```{r message=FALSE, warning=FALSE}
+# Popular belief was that RBI’s and Batting average were best predictors of wins. Billy Beane (Moneyball) used On base percentage and Slugging Percentage. These were later combined to form OPS.
+
+OBP_SLG_model <- lm(standardized_team_data$W ~ standardized_team_data$OBP + standardized_team_data$SLG)
+summary(OBP_SLG_model)
+
+RBI_BA_model <- lm(standardized_team_data$W ~ standardized_team_data$RBI + standardized_team_data$BA)
+summary(RBI_BA_model)
+
+# All three give very similar results when viewed on the team scale. Moneyball focuses on individual players, so I imagine results will differ when focusing on the effect individual players have on win totals when utilizing these metrics. But based on team statistics, there does not appear to be much of a difference in using RBIs and Batting Average vs. OBP and SLG or OPS 
+
+```
+
+These two regression models test wins against the metrics Billy Beane emphasized, as well as the more traditional metrics. Both models have a similar multiple R-squared value (about 0.46) which attributes 46% of the variation in wins to the metrics being tested. From this test, on a team scale there does not appear to be much of a difference between the "Moneyball" metrics and more traditional metrics.
+
+## Conclusions
+
+My answers to my original three research questions:
+
+-   1: The 5 statistics most correlated with wins are WHIP (Walks plus hits per inning pitched), RA/G (Runs against per game), RA (Total runs against), ERA+ (Earned Run Average normalized across the entire league), and ERA (Earned Run Average)
+
+-   2: Yes, wins can be predicted with relative accuracy using specific combinations of team statistics. The best combination that I found through the completion of this project used OPS, fielding percentage, ERA, and total runs scored.
+
+-   3: On the team scale, "Moneyball" statistics and the more traditional statistics appear to have about the same influence on wins. However, in *Moneyball*, Beane uses these methods to choose individual players. I believe that when zooming in on individual players, there may be a difference in these measurements that would favor using on-base percentage and slugging percentage over RBIs and batting average. Further testing is needed.
+
+### What's Next?
+
+When I started working on this project, I thought that I might come to some revolutionary conclusions, but after spending so much time with the data, I realize that this is all very surface level and is kind of intuitive. Obviously the more runs a team scores or the better their pitching or fielding is, the more wins they should have. Something that is a little less intuitive is the extent to which each statistic is correlated with wins so it was interesting to see which statistics had more of a relationship with wins.
+
+Some things that I would like to do in the future are:
+
+-   Use salary data: I think it would be interesting to see if spending truly has an effect on the number of wins teams have. This could be a good argument for the implementation of a salary cap if the findings are consistent with the argument. As mentioned in the introduction, I originally planned to use salary data but couldn't make it work for this project.
+
+-   Analyze individual players: This would dive a bit deeper into the data and might allow me to make more interesting conclusions. Also this would be a better implementation of the “Moneyball” analyses because it focuses more on individual player statistics as opposed to full teams.
+
+## References
+
+Baseball-Reference.com. (2024). Major League Baseball Team Statistics [Data set]. Retrieved December 8, 2024. <https://www.baseball-reference.com>
+
+Gaydos, R. (2024, September 25). “Moneyball” author makes stunning admission about analytics use in baseball. Fox News. <https://www.foxnews.com/sports/moneyball-author-makes-stunning-admission-about-analytics-use-baseball>
+
+James, B. (2001). The New Bill James Historical Baseball Abstract. Free Press.
+
+Lewis, M. (2003). Moneyball: The art of winning an unfair game. W.W. Norton.
+
+The Baseball Cube. (2002). 2002 MLB Payrolls [Data set]. Retrieved December 15, 2024. <https://www.thebaseballcube.com/content/payroll_year/2002>
+
+Wassermann, E., Czech, D. R., Wilson, M. J., & Joyner, A. B. (2015, March 20). An Examination of the Moneyball Theory: A Baseball Statistical Analysis. The Sport Journal. <https://thesportjournal.org/article/an-examination-of-the-moneyball-theory-a-baseball-statistical-analysis/>
