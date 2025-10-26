@@ -22,7 +22,7 @@ library(patchwork) # Used for combined visuals
 library(knitr) # Used for generation of table of Metrics and R-squared values
 
 # Load in data
-team_data <- read.csv("/Users/zacharybarber/Desktop/DA Work/final project/Team Stats for CSV - Sheet1.csv")
+team_data <- read.csv("Team Stats for CSV - Sheet1.csv")
 
 # Check which team names I need to change to standardize (This works really well because all of the team names that have changed through the years will show up last because of the order the function reads through the variable names)
 sapply(team_data[, c("Tm")], unique)
