@@ -1,5 +1,5 @@
 # Sabermetrics-Analysis
-This project contains code used to analyze baseball data for my Data Analytics 101 Final Project
+This project contains code used to analyze baseball data for my project entitled "Strategizing with Sabermetrics: A Baseball Regression Analysis"
 
 ## Author:
 Zach Barber
